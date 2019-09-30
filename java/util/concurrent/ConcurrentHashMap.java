@@ -274,7 +274,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
      * The primary design goal of this hash table is to maintain
      * concurrent readability (typically method get(), but also
      * iterators and related methods) while minimizing update
-     * contention. Secondary goals are to keep space consumption about
+     * contention. Secondary goals are to keep space consumption about  
      * the same or better than java.util.HashMap, and to support high
      * initial insertion rates on an empty table by many threads.
      *
@@ -1009,10 +1009,12 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
     /** Implementation for put and putIfAbsent */
     final V putVal(K key, V value, boolean onlyIfAbsent) {
         if (key == null || value == null) throw new NullPointerException();
+        // 计算key的hash值，与HashMap不同在于最高位一定是正数
         int hash = spread(key.hashCode());
         int binCount = 0;
         for (Node<K,V>[] tab = table;;) {
             Node<K,V> f; int n, i, fh;
+            // 第一次put时对数组进行初始化
             if (tab == null || (n = tab.length) == 0)
                 tab = initTable();
             else if ((f = tabAt(tab, i = (n - 1) & hash)) == null) {
@@ -2223,16 +2225,22 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
     private final Node<K,V>[] initTable() {
         Node<K,V>[] tab; int sc;
         while ((tab = table) == null || tab.length == 0) {
+            // sizeCtl < 0 说明有其它线程在进行初始化或者扩容，自旋让出CPU
             if ((sc = sizeCtl) < 0)
                 Thread.yield(); // lost initialization race; just spin
+            // 将sizeCtl标记为-1，标识当前线程需要对数组进行初始化，其它线程让步
             else if (U.compareAndSwapInt(this, SIZECTL, sc, -1)) {
                 try {
+                    // double check 以避免以下情况：
+                    // 存在其它线程存在进入P_initTable_1点（并且finally里的方法已执行完）
+                    // 这种情况下，本线程也是可以通过上面的CAS操作，所以需要再判断一遍table是否为空，以避免重复初始化。
                     if ((tab = table) == null || tab.length == 0) {
                         int n = (sc > 0) ? sc : DEFAULT_CAPACITY;
                         @SuppressWarnings("unchecked")
                         Node<K,V>[] nt = (Node<K,V>[])new Node<?,?>[n];
                         table = tab = nt;
                         sc = n - (n >>> 2);
+                        // P_initTable_1
                     }
                 } finally {
                     sizeCtl = sc;
