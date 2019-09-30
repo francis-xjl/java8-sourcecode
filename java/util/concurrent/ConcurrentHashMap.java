@@ -1009,29 +1009,41 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
     /** Implementation for put and putIfAbsent */
     final V putVal(K key, V value, boolean onlyIfAbsent) {
         if (key == null || value == null) throw new NullPointerException();
-        // 计算key的hash值，与HashMap不同在于最高位一定是正数
+        // 计算key的hash值，与HashMap不同，此hash值最高位一定是正数
         int hash = spread(key.hashCode());
+        // 这个值很关键，在最后的addCount时会利用该值来判定是否需要扩容
+        // 默认为0, 如果出现了hash冲突/是红黑树，才会 > 1
         int binCount = 0;
         for (Node<K,V>[] tab = table;;) {
             Node<K,V> f; int n, i, fh;
             // 第一次put时对数组进行初始化
             if (tab == null || (n = tab.length) == 0)
                 tab = initTable();
+            
+            // 数组已初始化，根据hash值得到数组下标，如果为空，则直接CAS插入
             else if ((f = tabAt(tab, i = (n - 1) & hash)) == null) {
+                // CAS失败则进入循环重次重试
                 if (casTabAt(tab, i, null,
                              new Node<K,V>(hash, key, value, null)))
                     break;                   // no lock when adding to empty bin
             }
+            // 若数组元素存在，且hash值为-1，则表示节点正在迁移，则去帮助迁移
             else if ((fh = f.hash) == MOVED)
                 tab = helpTransfer(tab, f);
+            // 若数组元素存在，而且hash值不为-1，则遍历查找插入点进行插入操作
             else {
                 V oldVal = null;
+                // 锁住头节点
                 synchronized (f) {
+                    // double check 确保只有一个线程进入下面的逻辑
                     if (tabAt(tab, i) == f) {
+                        // f是头节点，头节点可能四种情况：链表hash是正数，红黑树hash=-2，ReservationNode.hash= -3，hash = -1正在迁移
+                        // 由于MOVE(-1)这种情况上面的分支已经判定过了，那么这里只会出现三种可能性：链表hash，红黑树hash或者ReservationNode.hash
                         if (fh >= 0) {
                             binCount = 1;
                             for (Node<K,V> e = f;; ++binCount) {
                                 K ek;
+                                // 找到key相关的节点，替换原值
                                 if (e.hash == hash &&
                                     ((ek = e.key) == key ||
                                      (ek != null && key.equals(ek)))) {
@@ -1041,6 +1053,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                                     break;
                                 }
                                 Node<K,V> pred = e;
+                                // 遍历到叶子节点，未发现key相同的节点，则放到尾部
                                 if ((e = e.next) == null) {
                                     pred.next = new Node<K,V>(hash, key,
                                                               value, null);
@@ -1048,6 +1061,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                                 }
                             }
                         }
+                        // 判断是否为红黑树头节点
                         else if (f instanceof TreeBin) {
                             Node<K,V> p;
                             binCount = 2;
@@ -1060,15 +1074,19 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                         }
                     }
                 }
+                // 说明存在hash冲突
                 if (binCount != 0) {
+                    // 链表元素超过8个，可能需要转化为红黑树（也可能不需要，比如数组长度还不够64，这是在treeifyBin里判定的）
                     if (binCount >= TREEIFY_THRESHOLD)
                         treeifyBin(tab, i);
+                    // 如果原值不为null，则返回原值，由于未发生元素增加，不需要后续的addCount逻辑
                     if (oldVal != null)
                         return oldVal;
                     break;
                 }
             }
         }
+        // 只有在原值为null的情况下，才需要考虑扩容的情况
         addCount(1L, binCount);
         return null;
     }
@@ -2235,10 +2253,13 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                     // 存在其它线程存在进入P_initTable_1点（并且finally里的方法已执行完）
                     // 这种情况下，本线程也是可以通过上面的CAS操作，所以需要再判断一遍table是否为空，以避免重复初始化。
                     if ((tab = table) == null || tab.length == 0) {
+                        // 正常情况下，无参构造方法对应的sc首次只有默认值为0，所以数组长度为16
+                        // 有参构造方法，会传入初始容量initalCapacity，此时sc是经过tableSizeFor运算后的值，是大于等于入参initalCapacity的一个2的幂等数值（不同构造方法对应的具体数值不同）
                         int n = (sc > 0) ? sc : DEFAULT_CAPACITY;
                         @SuppressWarnings("unchecked")
                         Node<K,V>[] nt = (Node<K,V>[])new Node<?,?>[n];
                         table = tab = nt;
+                        // 第一次扩容后sizeCtl为数组长度的0.75
                         sc = n - (n >>> 2);
                         // P_initTable_1
                     }
