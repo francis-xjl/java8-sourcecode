@@ -1074,7 +1074,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                         }
                     }
                 }
-                // 说明存在hash冲突
+                // 说明存在hash冲突/在红黑树中插入
                 if (binCount != 0) {
                     // 链表元素超过8个，可能需要转化为红黑树（也可能不需要，比如数组长度还不够64，这是在treeifyBin里判定的）
                     if (binCount >= TREEIFY_THRESHOLD)
@@ -2305,6 +2305,21 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                    (n = tab.length) < MAXIMUM_CAPACITY) {
                 int rs = resizeStamp(n);
                 if (sc < 0) {
+                    // 
+                    // 这里有个BUG：https://bugs.java.com/bugdatabase/view_bug.do?bug_id=JDK-8214427
+                    // 其中sc = rs + 1 应该为sc = (rs <<< RESIZE_STAMP_SHIFT) + 1
+                    // 　　sc == rs + MAX_RESIZERS 应该为sc == (rs <<< RESIZE_STAMP_SHIFT) + MAX_RESIZERS
+                    // 这五个条件都是异常情况，不需要协助扩容，具体含义：
+                    // 1. (sc >>> RESIZE_STAMP_SHIFT) != rs
+                    //    sizeCtl与数组长度不匹配，可能是sizeCtl发生了变化
+                    // 2. sc == (rs <<< RESIZE_STAMP_SHIFT) + 1
+                    //    扩容是否已经结束
+                    // 3. sc == (rs <<< RESIZE_STAMP_SHIFT) + MAX_RESIZERS
+                    //    判断helpTransfer的线程数是否达最大上限
+                    // 4. (nt = nextTable) == null
+                    //    迁移工作已经结束, table已经是扩容后的数组了
+                    // 5. transferIndex <= 0
+                    //    没有需要协助迁移的元素了，注意这种情况下可能还没完全迁移完，但是已经不需要更多的线程协助迁移了
                     if ((sc >>> RESIZE_STAMP_SHIFT) != rs || sc == rs + 1 ||
                         sc == rs + MAX_RESIZERS || (nt = nextTable) == null ||
                         transferIndex <= 0)
@@ -2373,6 +2388,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                 break;
             else if (tab == table) {
                 int rs = resizeStamp(n);
+                // 这个分支实际不存在，在后续版本中该分支已经去除，直接忽略即可
                 if (sc < 0) {
                     Node<K,V>[] nt;
                     if ((sc >>> RESIZE_STAMP_SHIFT) != rs || sc == rs + 1 ||
