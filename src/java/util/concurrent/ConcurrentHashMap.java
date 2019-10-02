@@ -2364,15 +2364,21 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
      * @param size number of elements (doesn't need to be perfectly accurate)
      */
     private final void tryPresize(int size) {
+        // 计算扩容后的大小，最大为:1 << 30，一般为：大于等于1.5*size+1的2次幂，这样看扩容后的结果不是原来意义上的2倍
         int c = (size >= (MAXIMUM_CAPACITY >>> 1)) ? MAXIMUM_CAPACITY :
             tableSizeFor(size + (size >>> 1) + 1);
         int sc;
+        // sizeCtl >= 0 说明没有线程在扩容/初始化等操作
         while ((sc = sizeCtl) >= 0) {
             Node<K,V>[] tab = table; int n;
+            // 当table稍微初始化时，进行初始化
             if (tab == null || (n = tab.length) == 0) {
+                // sizeCtl > 计算后需要扩容到的长度，取sizeCtl的值，这里一般出现在构造时传入了另一个Map，Map的长度较小。
                 n = (sc > c) ? sc : c;
+                // CAS将sizeCtl设为-1，标记为初始化中
                 if (U.compareAndSwapInt(this, SIZECTL, sc, -1)) {
                     try {
+                        // 由于没有加锁，能够进入这里，可能是其它线程刚刚执行至P_TRY_PRESZE_1这里，所以这里需要判断是否已完成初始化
                         if (table == tab) {
                             @SuppressWarnings("unchecked")
                             Node<K,V>[] nt = (Node<K,V>[])new Node<?,?>[n];
@@ -2381,6 +2387,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                         }
                     } finally {
                         sizeCtl = sc;
+                        // P_TRY_PRESZE_1
                     }
                 }
             }
@@ -2656,6 +2663,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
     private final void treeifyBin(Node<K,V>[] tab, int index) {
         Node<K,V> b; int n, sc;
         if (tab != null) {
+            // 当数组长度小于64时，尝试扩容至2倍而不是转化为红黑树
             if ((n = tab.length) < MIN_TREEIFY_CAPACITY)
                 tryPresize(n << 1);
             else if ((b = tabAt(tab, index)) != null && b.hash >= 0) {
