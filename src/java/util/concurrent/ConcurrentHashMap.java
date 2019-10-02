@@ -2234,6 +2234,8 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
      * Must be negative when shifted left by RESIZE_STAMP_SHIFT.
      */
     static final int resizeStamp(int n) {
+        // 这一篇分析的比较好，先记一下，后面整理
+        // https://www.lizenghai.com/archives/4639.html
         return Integer.numberOfLeadingZeros(n) | (1 << (RESIZE_STAMP_BITS - 1));
     }
 
@@ -2261,10 +2263,10 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                         table = tab = nt;
                         // 第一次扩容后sizeCtl为数组长度的0.75
                         sc = n - (n >>> 2);
-                        // P_initTable_1
                     }
                 } finally {
                     sizeCtl = sc;
+                    // P_initTable_1
                 }
                 break;
             }
@@ -2284,10 +2286,20 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
      */
     private final void addCount(long x, int check) {
         CounterCell[] as; long b, s;
+        // 这里说明一下：ConcurrentHashMap的计数分为两个部分baseCount与counterCells，计数是这两个的总和
+        //
+        // counterCells为null时尝试对baseCount进行CAS操作
+        // 如果不成功或者couterCell不为null则进入分支
         if ((as = counterCells) != null ||
             !U.compareAndSwapLong(this, BASECOUNT, b = baseCount, s = b + x)) {
             CounterCell a; long v; int m;
+            // 标识cell值有没有写入完成
             boolean uncontended = true;
+            // 这里有四个条件，从前到后满足任一就不会再执行后续判定。判定的同时又有赋值操作，在源码里经常出现
+            // 1. as == null 这说明之前只写了baseCount，没有写到counterCells中，即第1次走进该分支
+            // 2. (m = as.length - 1) < 0 给m值赋值为数组最大索引值，如果数组长度为0，则跳过该分支
+            // 3. (a = as[ThreadLocalRandom.getProbe() & m]) == null 随机获取到本线程对应的数组位置，每个线程使用的随机种子是不一样的
+            // 4. !(uncontended = U.compareAndSwapLong(a, CELLVALUE, v = a.value, v + x))　CAS在随机到的数组位置写入更新的计数，如果失败了就进入分支
             if (as == null || (m = as.length - 1) < 0 ||
                 (a = as[ThreadLocalRandom.getProbe() & m]) == null ||
                 !(uncontended =
@@ -2304,6 +2316,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
             while (s >= (long)(sc = sizeCtl) && (tab = table) != null &&
                    (n = tab.length) < MAXIMUM_CAPACITY) {
                 int rs = resizeStamp(n);
+                // sc < 0 说明有其它线程在扩容
                 if (sc < 0) {
                     // 
                     // 这里有个BUG：https://bugs.java.com/bugdatabase/view_bug.do?bug_id=JDK-8214427
@@ -2324,9 +2337,11 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                         sc == rs + MAX_RESIZERS || (nt = nextTable) == null ||
                         transferIndex <= 0)
                         break;
+                    // 协助扩容数+1
                     if (U.compareAndSwapInt(this, SIZECTL, sc, sc + 1))
                         transfer(tab, nt);
                 }
+                // 没有其它线程协助扩容，这里初始化sc的值为(rs << RESIZE_STAMP_SHIFT) + 2)，即高16位为n(保留扩容前数组长度)，低16位为2(扩容线程数+1)
                 else if (U.compareAndSwapInt(this, SIZECTL, sc,
                                              (rs << RESIZE_STAMP_SHIFT) + 2))
                     transfer(tab, null);
@@ -2391,6 +2406,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                     }
                 }
             }
+            // 已扩容或者已达扩容上限
             else if (c <= sc || n >= MAXIMUM_CAPACITY)
                 break;
             else if (tab == table) {
@@ -2405,8 +2421,10 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                     if (U.compareAndSwapInt(this, SIZECTL, sc, sc + 1))
                         transfer(tab, nt);
                 }
+                // CAS操作将sizeCtl 设为(rs << RESIZE_STAMP_SHIFT) + 2，即有一个线程正在帮助扩容
                 else if (U.compareAndSwapInt(this, SIZECTL, sc,
                                              (rs << RESIZE_STAMP_SHIFT) + 2))
+                    // 进入实际扩容
                     transfer(tab, null);
             }
         }
@@ -2418,6 +2436,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
      */
     private final void transfer(Node<K,V>[] tab, Node<K,V>[] nextTab) {
         int n = tab.length, stride;
+        //
         if ((stride = (NCPU > 1) ? (n >>> 3) / NCPU : n) < MIN_TRANSFER_STRIDE)
             stride = MIN_TRANSFER_STRIDE; // subdivide range
         if (nextTab == null) {            // initiating
