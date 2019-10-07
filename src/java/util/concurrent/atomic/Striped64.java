@@ -295,6 +295,7 @@ abstract class Striped64 extends Number {
                 if (init)
                     break;
             }
+            // 这个分支存在于有其它线程正在初始化cells，本线程无法对cells进行更新，所以这里尝试对base值进行更新
             else if (casBase(v = base, ((fn == null) ? v + x :
                                         fn.applyAsLong(v, x))))
                 break;                          // Fall back on using base
