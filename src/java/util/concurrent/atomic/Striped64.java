@@ -276,7 +276,7 @@ abstract class Striped64 extends Number {
                     collide = false;
                     continue;                   // Retry with expanded table
                 }
-                // 扩容也失败，则重算线程对应的hash值，以便尝试下一次的CAS
+                // 重算线程对应的hash值，以便尝试下一次的CAS
                 h = advanceProbe(h);
             }
             else if (cellsBusy == 0 && cells == as && casCellsBusy()) {
