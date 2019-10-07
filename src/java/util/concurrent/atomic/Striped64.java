@@ -252,6 +252,7 @@ abstract class Striped64 extends Number {
                 }
                 else if (!wasUncontended)       // CAS already known to fail
                     wasUncontended = true;      // Continue after rehash
+                // cells[i]不为空时，尝试CAS更新cell的值
                 else if (a.cas(v = a.value, ((fn == null) ? v + x :
                                              fn.applyAsLong(v, x))))
                     break;
@@ -259,9 +260,11 @@ abstract class Striped64 extends Number {
                     collide = false;            // At max size or stale
                 else if (!collide)
                     collide = true;
+                // CAS更新cell的值失败，则尝试对cells进行扩容
                 else if (cellsBusy == 0 && casCellsBusy()) {
                     try {
                         if (cells == as) {      // Expand table unless stale
+                            // 扩容为原cells长度的2倍
                             Cell[] rs = new Cell[n << 1];
                             for (int i = 0; i < n; ++i)
                                 rs[i] = as[i];
