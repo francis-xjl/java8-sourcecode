@@ -209,13 +209,15 @@ abstract class Striped64 extends Number {
      * @param x the value
      * @param fn the update function, or null for add (this convention
      * avoids the need for an extra field or function in LongAdder).
-     * @param wasUncontended false if CAS failed before call
+     * @param wasUncontended false if CAS failed before call　标识之前是否遇到过CAS失败的情况（看逻辑其实不止失败的情况，比如cells没有初始化、getProbe()==0等等）
      */
     final void longAccumulate(long x, LongBinaryOperator fn,
                               boolean wasUncontended) {
         int h;
+        // getProbe为0说明没有初始化
         if ((h = getProbe()) == 0) {
             ThreadLocalRandom.current(); // force initialization
+            // getProbe应该是得到线程唯一的一个常量，用于计算线程在cells数组中的位置
             h = getProbe();
             wasUncontended = true;
         }
@@ -223,6 +225,7 @@ abstract class Striped64 extends Number {
         for (;;) {
             Cell[] as; Cell a; int n; long v;
             if ((as = cells) != null && (n = as.length) > 0) {
+                // (n - 1) & h 计算得到数组下标
                 if ((a = as[(n - 1) & h]) == null) {
                     if (cellsBusy == 0) {       // Try to attach new Cell
                         Cell r = new Cell(x);   // Optimistically create
@@ -232,6 +235,7 @@ abstract class Striped64 extends Number {
                                 Cell[] rs; int m, j;
                                 if ((rs = cells) != null &&
                                     (m = rs.length) > 0 &&
+                                    // 由于上面只有casCellsBusy一个CAS来避免同步，但是由于没有加锁，所以as可能与cells发生不一致的情况，所以这里需要double check
                                     rs[j = (m - 1) & h] == null) {
                                     rs[j] = r;
                                     created = true;
@@ -269,9 +273,11 @@ abstract class Striped64 extends Number {
                     collide = false;
                     continue;                   // Retry with expanded table
                 }
+                // 重算线程对应的hash值，以便尝试下一次的CAS
                 h = advanceProbe(h);
             }
             else if (cellsBusy == 0 && cells == as && casCellsBusy()) {
+                // 这里初始化cells为2个元素的数组
                 boolean init = false;
                 try {                           // Initialize table
                     if (cells == as) {
@@ -297,6 +303,7 @@ abstract class Striped64 extends Number {
      * in too many places to sensibly merge with long version, given
      * the low-overhead requirements of this class. So must instead be
      * maintained by copy/paste/adapt.
+     * 与longAccumulate逻辑一致，只是针对double类型做了long的转换，为了确保低开销，所以复制了一份代码。
      */
     final void doubleAccumulate(double x, DoubleBinaryOperator fn,
                                 boolean wasUncontended) {
