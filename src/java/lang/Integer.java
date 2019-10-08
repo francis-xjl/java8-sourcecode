@@ -827,6 +827,7 @@ public final class Integer extends Number implements Comparable<Integer> {
      * @since  1.5
      */
     public static Integer valueOf(int i) {
+        // 缓存 [-128, 127]　范围内的整形值
         if (i >= IntegerCache.low && i <= IntegerCache.high)
             return IntegerCache.cache[i + (-IntegerCache.low)];
         return new Integer(i);

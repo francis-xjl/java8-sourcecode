@@ -91,6 +91,7 @@ public class LinkedList<E>
      * Invariant: (first == null && last == null) ||
      *            (first.prev == null && first.item != null)
      */
+    // 只要LinkedList中存在一个节点，first & last都不为null，而且item都有值
     transient Node<E> first;
 
     /**
