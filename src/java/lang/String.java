@@ -1464,6 +1464,7 @@ public final class String
      */
     public int hashCode() {
         int h = hash;
+        // 由于String是不可变的，所以可以缓存hash值
         if (h == 0 && value.length > 0) {
             char val[] = value;
 
