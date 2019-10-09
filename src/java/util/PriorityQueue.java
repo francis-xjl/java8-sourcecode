@@ -95,6 +95,7 @@ public class PriorityQueue<E> extends AbstractQueue<E>
      * heap and each descendant d of n, n <= d.  The element with the
      * lowest value is in queue[0], assuming the queue is nonempty.
      */
+    // 平衡二叉堆
     transient Object[] queue; // non-private to simplify nested class access
 
     /**
